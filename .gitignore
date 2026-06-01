@@ -230,9 +230,8 @@ data/processed/
 # PyCharm
 .idea/
 
-# Virtual env
-venv/
-.env/
+# uv
+.venv/
 
 # Python cache
 __pycache__/
