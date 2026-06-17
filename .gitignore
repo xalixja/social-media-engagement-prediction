@@ -236,3 +236,5 @@ data/processed/
 # Python cache
 __pycache__/
 *.pyc
+
+notes.txt
