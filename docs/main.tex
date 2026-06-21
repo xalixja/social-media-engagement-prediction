@@ -1,4 +1,4 @@
-\documentclass[13pt, a4paper, oneside]{scrreprt}
+\documentclass[12pt, a4paper, oneside]{scrreprt}
 
 \usepackage{scrhack}
 \usepackage[utf8]{inputenc}
@@ -26,6 +26,27 @@
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{placeins}
+\setkomafont{chapter}{\Huge\bfseries\color{myblue}}
+\setkomafont{chapterentry}{\normalfont}
+\setkomafont{section}{\Large\bfseries}
+\setkomafont{subsection}{\large\bfseries}
+\setkomafont{disposition}{\normalfont} % reset, żeby nie dziedziczyć sans-serif po helvet
+
+\RedeclareSectionCommand[
+  beforeskip=1.5\baselineskip,
+  afterskip=1\baselineskip
+]{chapter}
+
+\RedeclareSectionCommand[
+  beforeskip=1.2\baselineskip,
+  afterskip=0.6\baselineskip
+]{section}
+
+\RedeclareSectionCommand[
+  beforeskip=0.8\baselineskip,
+  afterskip=0.4\baselineskip
+]{subsection}
+
 
 \definecolor{myblue}{RGB}{20, 80, 150}
 
@@ -81,7 +102,28 @@
 
 \begin{document}
 
-\maketitle
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+  \normalfont
+  \vspace*{0.6cm}
+  \includegraphics[width=0.5\textwidth]{figures/agh.jpg}\par
+  \vspace{0.9cm}
+  {\Large \bfseries Applied Computer Science \par}
+  \vspace{0.10cm}
+  {\large Project Report \par}
+  \vspace{0.8cm}
+  \rule{0.80\textwidth}{0.4pt}\par
+  \vspace{0.5cm}
+  {\LARGE \bfseries Predykcja zainteresowania postami w social media] z użyciem metod NLP \par}
+  \vspace{0.5cm}
+  \rule{0.80\textwidth}{0.4pt}\par
+  \vspace{1.2cm}
+  {\Large \textbf{Alicja Borek} \quad \\ \textbf{Dobrawa Rumszewicz} \quad \\\textbf{Patryk Kowalczyk} \par}
+  \vspace{0.6cm}
+  {\large Czerwiec 2026 \par}
+  \vfill
+\end{titlepage}
 
 \tableofcontents
 \newpage
@@ -308,6 +350,15 @@ Wykorzystano liczbę wykrzykników, znaków zapytania, słów zapisanych wielkim
 słów, zdań i znaków. Dodano również liczbę hashtagów, wzmianek, adresów internetowych
 i odnośników do mediów. Wielkie litery są na przykład wykorzystywane jako podkreślenie emocji.
 
+Cechy strukturalne, takie jak liczba wykrzykników, hashtagów czy wzmianek, zostały obliczone
+na podstawie oryginalnej kolumny \texttt{content}, a nie na kolumnie \texttt{processed\_content}
+przygotowanej w etapie czyszczenia tekstu. Wynika to z tego, że czyszczenie usuwa adresy
+internetowe oraz przekształca znaki \texttt{@} i \texttt{\#} do osobnych tokenów, więc liczenie
+tych elementów po czyszczeniu byłoby niemożliwe albo niepoprawne. Cechy oparte na konkretnym
+słownictwie, na przykład zaimkach albo słowach wzmacniających, zostały natomiast obliczone na
+kolumnie \texttt{processed\_content}, ponieważ tam tekst jest już ujednolicony pod względem
+wielkości liter i podziału na tokeny.
+
 Aby porównać krótkie i długie tweety, obliczono także wskaźniki względne.
 Przykładowo \texttt{exclamation\_per\_word} oznacza liczbę wykrzykników
 podzieloną przez liczbę słów powiększoną o jeden.
@@ -323,6 +374,19 @@ słów wyrażających pewność, superlatywów oraz wyraźnie negatywnych okreś
 Cechy te nie zastępują reprezentacji słów, ale umożliwiają modelowi uchwycenie
 szerszych właściwości stylu, na przykład skłonności do używania kategorycznych
 ocen albo bezpośrednich zwrotów do odbiorcy.
+
+Każda z czterech list słownikowych (\texttt{emphatic\_word\_count}, \\ \texttt{certainty\_word\_count},
+\texttt{superlative\_word\_count}, \\ \texttt{negative\_emphatic\_word\_count}) została zbudowana w
+dwóch warstwach. Pierwszą warstwę stanowi ogólny angielski słownik danego typu słownictwa,
+na przykład typowe wzmacniacze (\emph{extremely}, \emph{absolutely}, \emph{incredibly}) albo
+typowe superlatywy (\emph{best}, \emph{greatest}, \emph{worst}). Drugą warstwą jest zbiór słów
+charakterystycznych konkretnie dla stylu wypowiedzi z analizowanego konta, dodany do
+list ogólnych, na przykład \emph{tremendous}, \emph{fake}, \emph{rigged} czy \emph{witchhunt}.
+Niektóre słowa z tej drugiej warstwy, takie jak \emph{tremendous} czy \emph{incredible},
+celowo należą jednocześnie do więcej niż jednej listy, ponieważ w analizowanych tweetach
+pełnią funkcję zarówno wzmacniacza, jak i superlatywu. Rozszerzenie ogólnych list o słownictwo
+specyficzne dla konta pozwala cechom dokładniej odzwierciedlać rzeczywisty, powtarzalny zestaw
+słów używanych przez autora, a nie wyłącznie ogólny rejestr języka angielskiego.
 
 W projekcie uwzględniono również długość przeciętnego słowa, długość przeciętnego
 zdania, wskaźnik czytelności Flesch Reading Ease, poziom Flesch--Kincaid Grade,
@@ -363,6 +427,14 @@ cyfr, a około 0{,}2\% (93) zawiera inną liczbę co najmniej czterocyfrową.
 Takie elementy mogą opisywać informacje dotyczące wyborów, dat, wyników
 lub wartości ekonomicznych, dlatego zostały zachowane w zbiorze cech.
 
+Cecha \texttt{has\_year\_mention} jest ustawiana na 1, gdy w tekście pojawia się
+czterocyfrowa liczba zaczynająca się od 19 albo 20, a więc liczba, którą można
+odczytać jako rok. Cecha \texttt{has\_large\_number} jest natomiast ustawiana na 1,
+gdy w tekście pojawia się liczba złożona z co najmniej czterech cyfr, która jednocześnie
+nie spełnia wzorca roku. Rozdzielenie tych dwóch cech pozwala modelowi odróżnić
+odwołania do dat od innych dużych liczb, na przykład wyników głosowania albo
+wartości ekonomicznych.
+
 \begin{figure}[H]
 \centering
 \begin{subfigure}[t]{0.48\textwidth}
@@ -392,7 +464,21 @@ podstawowe wartości: udział tonu negatywnego, neutralnego i pozytywnego oraz w
 tonu negatywnego, dodatnia przewagę tonu pozytywnego, a wartość bliska zeru wskazuje na
 ton neutralny.
 
-Do obliczania sentymentu wykorzystano oryginalną treść tweetów po usunięciu adresów i elementów technicznych. Zachowano natomiast interpunkcję, wielkie litery i emotikony, ponieważ VADER potrafi wykorzystywać te sygnały. Wartość \texttt{sentiment\_intensity}, równa wartości bezwzględnej wyniku \texttt{compound}, została utworzona do analizy pomocniczej. Do końcowej macierzy modelu weszły cztery podstawowe wyniki VADER: negatywny, neutralny, pozytywny i złożony.
+Do obliczania sentymentu wykorzystano oryginalną treść tweetów po usunięciu adresów internetowych
+oraz samych znaków \texttt{@} i \texttt{\#} wraz z następującym po nich słowem, ponieważ nazwy
+kont i hashtagów nie powinny same z siebie wpływać na wykryty sentyment. Zachowano natomiast
+interpunkcję, wielkie litery i emotikony, ponieważ VADER potrafi wykorzystywać te sygnały.
+Wartość \texttt{sentiment\_intensity}, równa wartości bezwzględnej wyniku \texttt{compound},
+została utworzona do analizy pomocniczej. Do końcowej macierzy modelu weszły cztery podstawowe
+wyniki VADER: negatywny, neutralny, pozytywny i złożony.
+
+Na potrzeby wykresów i analizy pomocniczej wynik \texttt{compound} został dodatkowo
+przekształcony w kategorię opisową \texttt{sentiment\_category}. Tweet z wynikiem \texttt{compound}
+co najmniej równym 0,05 otrzymał etykietę Positive, tweet z wynikiem nie większym niż $-0{,}05$
+otrzymał etykietę Negative, a pozostałe przypadki, leżące blisko zera, otrzymały etykietę Neutral.
+Są to standardowo przyjęte dla metody VADER granice progowe. Kategoria ta nie weszła do
+końcowej macierzy cech modelu, ponieważ informację o sentymencie w pełniejszej, ciągłej formie
+przenoszą już cztery wyniki liczbowe VADER.
 
 \begin{figure}[H]
 \centering
@@ -490,6 +576,16 @@ Każda z nich ma \num{10045} kolumn, ponieważ zawiera \num{10000} cech tekstowy
 różne od zera. Jest to ważne, ponieważ pojedynczy tweet nie zawiera większości
 słów obecnych w słowniku, a zapisywanie wszystkich zer byłoby bardzo nieefektywne
 pamięciowo.
+
+Na tym etapie obliczono również logarytm liczby retweetów, \texttt{log\_retweets},
+i zapisano go w pełnym pliku \texttt{df\_with\_features.csv} razem z pozostałymi
+kolumnami. Kolumna ta nie została jednak włączona do żadnej z dwóch macierzy cech
+użytych do trenowania modeli klasyfikacyjnych. Liczba retweetów jest bowiem
+podstawą zmiennej docelowej \texttt{engagement\_level}, więc dodanie jej logarytmu
+do cech byłoby bezpośrednim wyciekiem informacji o etykiecie do zbioru danych
+wejściowych. Kolumna ta została zachowana wyłącznie jako materiał pomocniczy
+do ewentualnych przyszłych eksperymentów regresyjnych, w których liczba retweetów
+byłaby przewidywana jako wartość liczbowa, a nie jako klasa.
 
 \chapter{Budowa i ocena modeli}
 
