@@ -1,0 +1,964 @@
+\documentclass[13pt, a4paper, oneside]{scrreprt}
+
+\usepackage{scrhack}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{csquotes}
+\usepackage{mathpazo}
+\usepackage[scaled=0.95]{helvet}
+\usepackage{courier}
+\usepackage{microtype}
+\usepackage{setspace}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[automark,headsepline]{scrlayer-scrpage}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage[newfloat]{minted}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[style=numeric, sorting=nty]{biblatex}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\sisetup{output-decimal-marker={,}}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{placeins}
+
+\definecolor{myblue}{RGB}{20, 80, 150}
+
+\usepackage[
+    colorlinks=true,
+    linkcolor=myblue,
+    citecolor=myblue,
+    urlcolor=myblue,
+    bookmarks=true
+]{hyperref}
+
+\onehalfspacing
+\pagestyle{scrheadings}
+\setlength{\parskip}{1em}
+
+\SetupFloatingEnvironment{listing}{
+    fileext=lol,
+    listname={Spis kodów},
+    name=Listing,
+    placement=htbp
+}
+
+\setcounter{biburlnumpenalty}{100}
+\setcounter{biburlucpenalty}{100}
+\setcounter{biburllcpenalty}{100}
+
+\addbibresource{bibliografia.bib}
+
+\title{Predykcja zainteresowania postami w social media z użyciem metod NLP}
+\author{Alicja Borek \and Dobrawa Rumszewicz \and Patryk Kowalczyk}
+\date{Czerwiec 2026}
+
+% Wykresy eksportowane z notebooków należy umieścić w katalogu docs/figures/.
+% Makro poniżej pokaże wykres, jeżeli plik istnieje. W przeciwnym razie
+% zostawi czytelny placeholder z nazwą oczekiwanego pliku.
+\newcommand{\autoplot}[1]{%
+    \IfFileExists{figures/#1}{%
+        \includegraphics[width=\linewidth]{figures/#1}%
+    }{%
+        \fbox{%
+            \parbox[c][0.23\textheight][c]{0.92\linewidth}{%
+                \centering\small
+                Miejsce na wykres wygenerowany w notebooku.\\[0.5em]
+                Wstaw plik graficzny do katalogu \texttt{figures}.%
+            }%
+        }%
+    }%
+}
+
+\newcommand{\resultplaceholder}[1]{%
+    \textcolor{myblue}{\textbf{[Uzupełnić po ponownym uruchomieniu notebooków: #1]}}%
+}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\chapter{Wprowadzenie}
+
+Jedną z podstawowych form reakcji użytkowników serwisu Twitter, obecnie działającego pod nazwą X,
+było przekazanie dalej cudzego wpisu. W analizowanym zbiorze jest to zapisane jako liczba
+retweetów. W tym projekcie liczba retweetów została przyjęta jako miara zainteresowania wpisem.
+Celem jest sprawdzenie, czy z formy i treści wpisu można przewidzieć, czy znalazł się on w
+grupie tweetów o niskim, średnim albo wysokim zainteresowaniu.
+
+Temat wymaga zbudowania modelu predykcyjnego dla tweetów Donalda Trumpa,
+wykorzystania reprezentacji słów występujących w tekście oraz przeprowadzenia analizy SHAP.
+NLP \emph{Natural Language Processing} oznacza przetwarzanie języka naturalnego,
+czyli przekształcanie tekstu napisanego przez człowieka
+w postać liczbową, którą może wykorzystywać algorytm uczenia maszynowego.
+
+Głównym pytaniem jest: czy słowa, frazy oraz proste cechy stylistyczne tweetów pozwalają
+trafnie przewidywać poziom liczby retweetów? Drugie pytanie dotyczy interpretacji modelu:
+które elementy wpisu najsilniej wpływają na decyzję modelu dotyczącą
+klasy \emph{Low}, \emph{Medium} albo \emph{High}? Odpowiedź na drugie pytanie uzyskano
+przy użyciu metody SHAP, czyli \emph{SHapley Additive exPlanations}.
+
+W literaturze dotyczącej konta \texttt{@realDonaldTrump} zwraca się uwagę zarówno na
+tematykę, jak i na styl wypowiedzi. Clarke i Grieve opisali zmienność stylu tweetów
+publikowanych na tym koncie i wyróżnili style konwersacyjny, kampanijny, zaangażowany
+oraz doradczy \cite{clarke2019}. Savoy wskazał natomiast na rolę charakterystycznego
+słownictwa, negatywnego tonu, ocen kategorycznych oraz wzmacniających przymiotników
+\cite{savoy2022}. Te obserwacje uzasadniają wykorzystanie nie tylko pojedynczych słów,
+ale również cech takich jak liczba wykrzykników, wzmianki o innych użytkownikach,
+długość tekstu, liczby, czy wskaźniki czytelności. Materiały użyte użyte jako inspiracja
+do wyboru analizowanych cech, zwracają uwagę na podobne zjawiska stylistyczne,
+między innymi powtarzalność słów, krótkie zdania, superlatywy oraz wzmianki i hashtagi
+\cite{textInspector2022,theConversation2018,healy2018}.
+
+\chapter{Dane i wstępna analiza eksploracyjna}
+
+\section{Źródło i wybór zbioru danych}
+
+W projekcie wykorzystano zbiór \emph{Trump Tweets} udostępniony
+na platformie Kaggle \cite{kaggleTrumpTweets}. Po rozpakowaniu danych dostępne
+były dwa pliki: \texttt{realdonaldtrump.csv} oraz \texttt{trumptweets.csv}.
+Pierwszy plik zawierał \num{43352} rekordy, natomiast drugi \num{41122}.
+Porównanie identyfikatorów tweetów wykazało, że oba pliki mają \num{41104} wspólnych
+wpisów. W pliku \texttt{realdonaldtrump.csv} znajdowało się dodatkowo \num{2248} tweetów,
+a w drugim pliku tylko \num{18} tweetów nieobecnych w pierwszym. Z tego powodu do dalszej
+analizy wybrano plik \texttt{realdonaldtrump.csv}.
+
+Każdy rekord zawierał identyfikator wpisu, odnośnik, pełną treść, datę publikacji,
+liczbę retweetów, liczbę polubień, a w części przypadków również informacje o wzmiankach
+i hashtagach. Kolumna \texttt{content} była podstawowym źródłem tekstu.
+Kolumna \texttt{retweets} została wykorzystana do zbudowania zmiennej docelowej.
+Kolumna \texttt{favorites} została wykorzystana wyłącznie w analizie eksploracyjnej i nie znalazła
+się w końcowej macierzy cech. Włączenie liczby polubień do modelu przewidującego retweety
+byłoby dużym pominięciem analizy tekstu, ponieważ jak wynika z macierzy korelacji \ref{fig:feature-correlation}
+kolumny \texttt{retweets} i \texttt{favorites} są mocno powiązane. Model mógłby wtedy uzyskiwać
+wysoki wynik dzięki informacjom dostępnym z pierwszych polubień, a nie dzięki analizie języka tweeta.
+
+\section{Rozkład retweetów i definicja klas}
+
+Liczba retweetów ma bardzo nierówny rozkład. Mediana wynosiła 396{,}5,
+średnia wynosiła około \num{6265}, a maksymalna wartość osiągała \num{302269}.
+Duża różnica między średnią i medianą wskazuje, że niewielka liczba bardzo
+popularnych tweetów silnie podnosi średnią, co potwierdza wykres \ref{fig:eda-retweets-length}.
+Taki rozkład utrudniałby bezpośrednią regresję liczby retweetów, dlatego stworzono
+klasyfikację trzech poziomów zainteresowania.
+
+Granice klas wyznaczono na podstawie kwantyli rozkładu retweetów. Tweet
+z nie więcej niż 53 retweetami otrzymał etykietę \emph{Low}. Tweet z liczbą
+retweetów od 54 do 4558 otrzymał etykietę \emph{Medium}. Tweet z liczbą retweetów
+większą niż 4558 otrzymał etykietę \emph{High}, co przedstawiono w tabeli \ref{fig:eda-classes}.
+Zastosowanie dwóch kwantyli, odpowiadających około jednej trzeciej i dwóm trzecim obserwacji,
+prowadzi do klas o bardzo zbliżonej liczności. Dzięki temu model nie powinien uzyskiwać dobrego
+wyniku wyłącznie przez wybieranie najczęstszej klasy.
+
+\begin{table}[H]
+\centering
+\caption{Podstawowe informacje o danych i zadaniu klasyfikacyjnym.}
+\label{tab:dataset-summary}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.46\textwidth}X}
+\toprule
+Element & Wartość \\
+\midrule
+Wybrany plik źródłowy & \texttt{realdonaldtrump.csv} \\
+Liczba tweetów & \num{43352} \\
+Liczba klas & 3: \emph{High}, \emph{Low}, \emph{Medium} \\
+Granica klasy \emph{Low} & Maksymalnie 53 retweety \\
+Granica klasy \emph{Medium} & Od 54 do 4558 retweetów \\
+Granica klasy \emph{High} & Powyżej 4558 retweetów \\
+Liczba przykładów treningowych & \num{34681} \\
+Liczba przykładów testowych & \num{8671} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{eda_retweets_and_length.png}
+\caption{Rozkład liczby retweetów oraz długości tweetów.}
+\label{fig:eda-retweets-length}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{eda_engagement_classes.png}
+\caption{Granice i liczności klas zainteresowania.}
+\label{fig:eda-classes}
+\end{subfigure}
+\caption{Wykresy z pierwszego etapu analizy eksploracyjnej.}
+\label{fig:eda-main}
+\end{figure}
+
+\section{Zmiana zainteresowania w czasie}
+
+W analizie eksploracyjnej data publikacji została przekształcona do formatu daty,
+a następnie dla każdego roku obliczono medianę liczby retweetów oraz liczbę
+opublikowanych wpisów. Najwyższą medianę retweetów zaobserwowano w roku 2020, kiedy
+wynosiła ona \num{19279}. Z danych widać, że popularność konta konsekwentnie rosła
+z czasem, co widoczne jest na wykresie \ref{fig:eda-time}.
+Zjawisko to jest istotne interpretacyjnie, ponieważ wysoka
+liczba retweetów zależy nie tylko od słów użytych w tweecie, lecz również od okresu
+jego publikacji, bieżących wydarzeń i liczby obserwujących konto.
+
+Zmienna czasu nie została jednak dodana do głównej macierzy cech.
+Celem projektu było sprawdzenie ile informacji można wyciągnąć z tekstu i jego cech językowych.
+Dodanie roku, miesiąca albo godziny mogłoby poprawić wynik predykcyjny, ale
+osłabiłoby odpowiedź na pytanie, czy sam styl i treść wpisu wyjaśniają zainteresowanie.
+Z tego powodu analiza czasu została potraktowana jako element rozpoznania danych,
+a nie jako główne źródło predykcji.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.58\textwidth}
+\centering
+\autoplot{eda_temporal_analysis.png}
+\caption{Mediana retweetów i liczba tweetów według roku.}
+\label{fig:eda-time}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.38\textwidth}
+\centering
+\autoplot{eda_early_correlation.png}
+\caption{Wczesna korelacja Pearsona między retweetami, długością wpisu i liczbą polubień.}
+\label{fig:eda-correlation}
+\end{subfigure}
+\caption{Analiza zmian zainteresowania w czasie i wstępnych zależności liczbowych.}
+\label{fig:eda-time-correlation}
+\end{figure}
+
+\chapter{Przygotowanie tekstu}
+
+\section{Czyszczenie tweetów}
+
+Tweety zawierają elementy, które mogą utrudniać analizę słów.
+Należą do nich adresy internetowe, odnośniki do obrazów, emotikony, wielokrotne odstępy
+i znaki specjalne. W pierwszym etapie każdy tweet został zamieniony na małe litery,
+a następnie usunięto adresy rozpoczynające się od \texttt{http},
+\texttt{www} oraz odnośniki \texttt{pic.twitter.com}. Zachowano cyfry,
+ponieważ mogą one wskazywać na lata, liczby głosów, wielkości ekonomiczne
+lub inne fakty, które mają znaczenie dla zainteresowania.
+
+Jeśli chodzi o wzmianki (ang. \textit{mentions}) i hashtagi to postanowiono zachować o nich informację
+więc zamieniono je do takiego formatu aby znaki \texttt{@} i \texttt{\#} nie zostały potraktowane jak znaki specjalne i usunięte.
+Wzmianka o koncie jest przekształcana do tokenu w postaci
+\texttt{mentions\_nazwa\_konta}, na przykład \texttt{@CNN} może zostać
+zapisana jako \texttt{mentions\_cnn}. Hashtag jest zapisywany jako
+token \texttt{hashtag\_nazwa}, na przykład \texttt{\#MAGA} jako
+\texttt{hashtag\_maga}. Takie rozwiązanie zachowuje dwie
+informacje równocześnie: konkretną nazwę oraz fakt, że nazwa
+została użyta jako wzmianka albo hashtag. Jest to korzystne dla
+późniejszej interpretacji SHAP, ponieważ cecha \texttt{mentions\_foxnews}
+jest bardziej jednoznaczna niż samo słowo \texttt{foxnews}. Dodatkowo
+usunięto znacznik \texttt{rt}, który wskazuje, że wpis jest retweetem.
+
+\section{Tokenizacja, stopwords i lematyzacja}
+
+Po czyszczeniu tekst został podzielony na tokeny. Następnie
+usunięto angielskie słowa, które występują bardzo często, ale zazwyczaj
+wnoszą niewiele informacji o temacie, na przykład \emph{the},
+\emph{and} lub \emph{of}. Nie zastosowano jednak bezwarunkowego
+usunięcia wszystkich takich słów. Zachowano zaimki osobowe, przeczenia i
+czasowniki modalne, między innymi \emph{i}, \emph{you}, \emph{we}, \emph{not},
+\emph{never}, \emph{will} oraz \emph{should}. Są to słowa ważne dla stylu,
+ponieważ mogą sygnalizować zwracanie się do odbiorców,
+budowanie wspólnoty, deklarowanie pewności albo negowanie stanowiska przeciwnika.
+
+Kolejnym krokiem była lematyzacja przy użyciu narzędzia WordNetLemmatizer.
+Lemat to podstawowa forma słowa używana jako wspólny reprezentant jego
+odmian (np. \emph{running}, \emph{ran} -> \emph{run}).
+Zastosowanie lematyzacji zmniejsza liczbę odrębnych wariantów słów i
+pozwala modelowi częściej rozpoznawać podobne znaczenia. Osobno usunięto
+nazwę konta \texttt{realdonaldtrump}, ponieważ pojawia się ona często
+jako samocytowanie i nie jest interesującym sygnałem językowym.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{preprocessing_wordcloud.png}
+\caption{Chmura słów po przetworzeniu tekstu.}
+\label{fig:wordcloud}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{preprocessing_top_words.png}
+\caption{Najczęściej występujące tokeny.}
+\label{fig:top-words}
+\end{subfigure}
+\caption{Wizualne podsumowanie słownictwa po czyszczeniu i lematyzacji.}
+\label{fig:preprocessing-viz}
+\end{figure}
+
+\chapter{Konstruowanie cech i reprezentacja tekstu}
+
+\section{Cechy strukturalne i stylistyczne}
+
+Słowa i frazy są głównym elementem projektu, ale tekst tweetów zawiera również cechy,
+których nie opisuje sama lista słów. Z tego powodu obliczono 45 dodatkowych cech liczbowych.
+Wykorzystano liczbę wykrzykników, znaków zapytania, słów zapisanych wielkimi literami,
+słów, zdań i znaków. Dodano również liczbę hashtagów, wzmianek, adresów internetowych
+i odnośników do mediów. Wielkie litery są na przykład wykorzystywane jako podkreślenie emocji.
+
+Aby porównać krótkie i długie tweety, obliczono także wskaźniki względne.
+Przykładowo \texttt{exclamation\_per\_word} oznacza liczbę wykrzykników
+podzieloną przez liczbę słów powiększoną o jeden.
+Cechy \texttt{ends\_with\_exclamation} oraz \texttt{ends\_with\_question} wskazują,
+czy tweet kończy się odpowiednio wykrzyknikiem albo pytajnikiem.
+Wskaźnik \texttt{max\_exclamation\_run} mierzy najdłuższy ciąg kolejnych
+wykrzykników, a \texttt{shouting\_index} określa udział wielkich liter w całym wpisie.
+
+Osobna grupa cech została zbudowana na podstawie list z określonym typem słownictwa. Obliczono
+liczbę zaimków pierwszej osoby liczby pojedynczej i mnogiej, liczbę zwrotów w drugiej osobie,
+czasowników modalnych i przeczeń. Obliczono również liczbę słów wzmacniających,
+słów wyrażających pewność, superlatywów oraz wyraźnie negatywnych określeń.
+Cechy te nie zastępują reprezentacji słów, ale umożliwiają modelowi uchwycenie
+szerszych właściwości stylu, na przykład skłonności do używania kategorycznych
+ocen albo bezpośrednich zwrotów do odbiorcy.
+
+W projekcie uwzględniono również długość przeciętnego słowa, długość przeciętnego
+zdania, wskaźnik czytelności Flesch Reading Ease, poziom Flesch--Kincaid Grade,
+współczynnik powtórzeń słów oraz Type-Token Ratio. Type-Token Ratio jest
+ilorazem liczby różnych słów i liczby wszystkich słów. Wysoka wartość
+oznacza większą różnorodność słownictwa, a niska wartość wskazuje na powtarzalność.
+Cechy czytelności należy interpretować ostrożnie, ponieważ zostały pierwotnie
+opracowane dla dłuższych tekstów, podczas gdy tweet jest bardzo krótką formą wypowiedzi.
+
+Jak stworzone cechy są powiązane z liczbą retweetów, pokazuje wykres \ref{fig:feature-correlation},
+a zwłaszcza pierwsza kolumna którą podkreślono.
+Widać, że niektóre cechy mają wyraźną korelację z liczbą retweetów.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Grupy cech liczbowych wykorzystanych w końcowej macierzy danych.}
+\label{tab:numerical-features}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.26\textwidth}X}
+\toprule
+Grupa & Zastosowane kolumny \\
+\midrule
+Interpunkcja i długość & \texttt{exclamation\_count}, \texttt{question\_count}, \texttt{capslock\_words\_count}, \texttt{word\_count}, \texttt{sentence\_count}, \texttt{char\_count}. \\
+Elementy platformy & \texttt{hashtag\_count}, \texttt{mention\_count}, \texttt{has\_url}, \texttt{has\_media\_link}, \texttt{url\_count}. \\
+Intensywność zapisu & \texttt{exclamation\_per\_word}, \texttt{question\_per\_word}, \texttt{ends\_with\_exclamation}, \texttt{ends\_with\_question}, \texttt{max\_exclamation\_run}, \texttt{shouting\_index}. \\
+Zaimek i retoryka & \texttt{first\_person\_singular\_count}, \texttt{first\_person\_plural\_count}, \texttt{second\_person\_count}, \texttt{modal\_count}, \texttt{negation\_count}, \texttt{emphatic\_word\_count}, \texttt{certainty\_word\_count}, \texttt{superlative\_word\_count}, \texttt{negative\_emphatic\_word\_count}. \\
+Czytelność i słownictwo & \texttt{avg\_word\_length}, \texttt{avg\_sentence\_length}, \texttt{flesch\_reading\_ease}, \texttt{flesch\_kincaid\_grade}, \texttt{repetition\_ratio}, \texttt{lexical\_diversity\_ttr}. \\
+Sentyment & \texttt{sent\_vader\_neg}, \texttt{sent\_vader\_neu}, \texttt{sent\_vader\_pos}, \texttt{sent\_vader\_compound}. \\
+Liczby w tekście & \texttt{has\_number}, \texttt{number\_token\_count}, \texttt{has\_year\_mention}, \texttt{has\_large\_number}. \\
+Tematy & \texttt{topic\_lda\_1}, \texttt{topic\_lda\_2}, \texttt{topic\_lda\_3}, \texttt{topic\_lda\_4}, \texttt{topic\_lda\_5}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+W czasie analizy stwierdzono, że \num{13118} tweetów, czyli około 30{,}3\%,
+zawiera co najmniej jedną liczbę. Około 3{,}1\% wpisów (1339) zawiera rok w postaci czterech
+cyfr, a około 0{,}2\% (93) zawiera inną liczbę co najmniej czterocyfrową.
+Takie elementy mogą opisywać informacje dotyczące wyborów, dat, wyników
+lub wartości ekonomicznych, dlatego zostały zachowane w zbiorze cech.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{features_distributions.png}
+\caption{Rozkłady cech stylistycznych.}
+\label{fig:feature-distributions}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{features_numeric_tokens.png}
+\caption{Związek liczb w tekście z logarytmem liczby retweetów.}
+\label{fig:numeric-tokens}
+\end{subfigure}
+\caption{Wykresy z etapu tworzenia cech.}
+\label{fig:feature-engineering-viz}
+\end{figure}
+
+\section{Analiza sentymentu VADER}
+
+Dla każdego wpisu obliczono wynik sentymentu metodą VADER,
+czyli \emph{Valence Aware Dictionary and sEntiment Reasoner}. Jest to słownikowo-regułowa
+metoda przygotowana do tekstów z mediów społecznościowych \cite{hutto2014}. Zwraca ona cztery
+podstawowe wartości: udział tonu negatywnego, neutralnego i pozytywnego oraz wynik złożony
+\texttt{compound} w przybliżonym zakresie od $-1$ do $1$. Wartość ujemna sugeruje przewagę
+tonu negatywnego, dodatnia przewagę tonu pozytywnego, a wartość bliska zeru wskazuje na
+ton neutralny.
+
+Do obliczania sentymentu wykorzystano oryginalną treść tweetów po usunięciu adresów i elementów technicznych. Zachowano natomiast interpunkcję, wielkie litery i emotikony, ponieważ VADER potrafi wykorzystywać te sygnały. Wartość \texttt{sentiment\_intensity}, równa wartości bezwzględnej wyniku \texttt{compound}, została utworzona do analizy pomocniczej. Do końcowej macierzy modelu weszły cztery podstawowe wyniki VADER: negatywny, neutralny, pozytywny i złożony.
+
+\begin{figure}[H]
+\centering
+\autoplot{features_sentiment.png}
+\caption{Rozkład kategorii sentymentu, rozkład wyniku złożonego VADER oraz logarytm liczby retweetów w zależności od sentymentu.}
+\label{fig:sentiment}
+\end{figure}
+
+\section{Reprezentacja słów: CountVectorizer i TF-IDF}
+
+Model klasyfikacyjny nie może bezpośrednio operować na ciągu znaków, dlatego tekst
+zamieniono na wektor liczb. Pierwszą zastosowaną reprezentacją był CountVectorizer.
+Dla każdego tweetu tworzy on wiersz macierzy, a dla każdego słowa lub frazy tworzy
+kolumnę. Wartość w komórce oznacza liczbę wystąpień danego słowa albo frazy
+w konkretnym tweecie. Taka reprezentacja jest nazywana Bag of Words, ponieważ
+zachowuje informację o występowaniu słów, lecz nie zachowuje kolejności
+w zdaniu ~\cite{CountVectorizer}.
+
+Drugą reprezentacją był TF-IDF, czyli \emph{Term Frequency-Inverse Document Frequency}.
+Pierwsza część tego skrótu, \emph{term frequency}, opisuje częstość danego terminu w
+konkretnym dokumencie. Druga część, \emph{inverse document frequency}, obniża znaczenie
+słów występujących w bardzo wielu dokumentach. Matematycznie jest to zapisane jako ~\cite{TFIDFequation}:
+\[
+\mathrm{TFIDF}(t,d) = \mathrm{TF}(t,d) \cdot \log\left(\frac{N}{\mathrm{DF}(t)+1}\right),
+\]
+gdzie $t$ oznacza termin, $d$ oznacza tweeta, $N$ oznacza liczbę tweetów,
+a $\mathrm{DF}(t)$ oznacza liczbę tweetów zawierających termin $t$.
+Dzięki temu często występujące słowa o małej wartości rozróżniającej otrzymują
+niższą wagę, a słowa charakterystyczne dla mniejszej części wpisów otrzymują
+wyższą wagę \cite{TFIDF}.
+
+W obu reprezentacjach zastosowano jednoelementowe i dwuelementowe n-gramy.
+Jednoelementowy n-gram to pojedyncze słowo, na przykład \emph{great}. Dwuelementowy
+n-gram, nazywany bigramem, to para kolejnych słów, na przykład \emph{fake news}
+albo \emph{thank you}. Uwzględnienie bigramów jest istotne, ponieważ znaczenie
+frazy nie zawsze wynika z sumy znaczeń pojedynczych słów. Słownik ograniczono
+do \num{10000} cech tekstowych. Dodatkowo odrzucono terminy występujące w
+mniej niż pięciu tweetach oraz terminy obecne w ponad 95\% tweetów. Otrzymano
+dwie macierze tekstowe o wymiarze \num{43352} na \num{10000}.
+
+\section{Modelowanie tematów LDA}
+
+W projekcie zastosowano również modelowanie tematów metodą LDA,
+czyli \emph{Latent Dirichlet Allocation} \cite{blei2003}. Metoda ta
+zakłada, że dokument może łączyć kilka ukrytych tematów, a każdy
+temat jest opisywany przez rozkład słów. Zasadniczo algorythm LDA zakłada,
+że dokumenty zostały wygenerowane poprzez losowe próbkowanie
+tematów sprzed utworzenia dokumentu i próbuje dokonać inżynierii
+wstecznej tego próbkowania, co przedstawione jest na stronie IBM \cite{IBM_LDA}.
+
+Model LDA został dopasowany do surowych zliczeń słów z CountVectorizer,
+ponieważ LDA operuje na reprezentacji bag of words.
+Ustalono liczbę pięciu tematów. Dla każdego tweetu otrzymano
+pięć liczb \texttt{topic\_lda\_1}-\texttt{topic\_lda\_5}, które
+opisują stopień przypisania wpisu do poszczególnych tematów.
+Wśród ważnych słów tematów pojawiły się między innymi
+\emph{country}, \emph{china}, \emph{thank you}, \emph{democrat}, \emph{fake news}
+oraz nazwy użytkowników \ref{fig:lda-topics}. Te cechy nie zastępują tekstowej reprezentacji TF-IDF,
+ale dodają dodatkową informację o dominujących obszarach treści.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{features_lda_topics.png}
+\caption{Najważniejsze słowa dla pięciu tematów LDA.}
+\label{fig:lda-topics}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{features_correlation_heatmap.png}
+\caption{Macierz korelacji cech liczbowych i liczby retweetów.}
+\label{fig:feature-correlation}
+\end{subfigure}
+\caption{Wizualizacja tematów oraz współzależności cech numerycznych.}
+\label{fig:topics-correlation}
+\end{figure}
+
+\section{Łączenie i normalizacja cech}
+
+Cechy tekstowe i cechy liczbowe mają różne skale. Przykładowo liczba znaków może
+mieć wartość większą niż 100, wskaźnik sentymentu złożonego mieści się w pobliżu
+przedziału od $-1$ do $1$, a cecha binarna ma wyłącznie wartości 0 i 1. Aby żadna
+cecha nie dominowała wyłącznie z powodu swojej skali, wszystkie 45
+cech liczbowych zostało przeskalowane metodą StandardScaler.
+Po standaryzacji każda cecha ma średnią równą zero i odchylenie standardowe
+równe jeden w zbiorze użytym do dopasowania skalera.
+
+Następnie połączono kolumny tekstowe z kolumnami liczbowymi. Otrzymano dwie końcowe
+rzadkie macierze:\\
+\texttt{X\_tfidf\_features.npz} oraz \texttt{X\_count\_features.npz}.\\
+Każda z nich ma \num{10045} kolumn, ponieważ zawiera \num{10000} cech tekstowych i
+45 cech liczbowych. Macierz rzadka przechowuje przede wszystkim wartości
+różne od zera. Jest to ważne, ponieważ pojedynczy tweet nie zawiera większości
+słów obecnych w słowniku, a zapisywanie wszystkich zer byłoby bardzo nieefektywne
+pamięciowo.
+
+\chapter{Budowa i ocena modeli}
+
+\section{Podział danych}
+
+Dane zostały podzielone na zbiór treningowy i testowy w proporcji 80\% do 20\%.
+Zbiór treningowy zawierał \num{34681} tweetów, a testowy \num{8671}.
+Podział był stratyfikowany, co oznacza, że proporcje klas \emph{High}, \emph{Low} i \emph{Medium}
+zostały zachowane w obu częściach danych.
+
+Etykiety tekstowe zostały technicznie zakodowane jako liczby. Zastosowany LabelEncoder ~\cite{LabelEncoderGFG}
+uporządkował je alfabetycznie, dlatego w aktualnym uruchomieniu kod \texttt{0} oznaczał
+klasę \emph{High}, kod \texttt{1} klasę \emph{Low}, a kod \texttt{2} klasę \emph{Medium}.
+To kodowanie nie oznacza, że klasa \emph{High} jest mniejsza od \emph{Low}.
+Jest to wyłącznie techniczna reprezentacja kategorii.
+
+\section{Porównywane modele}
+
+Pierwszym punktem odniesienia był DummyClassifier ze strategią \emph{most frequent}.
+Nie analizuje on żadnych cech i zawsze przewiduje klasę najczęściej występującą w
+zbiorze treningowym. Jego wynik pokazuje minimalny poziom, który powinny wyraźnie
+przekroczyć modele wykorzystujące tekst.~\cite{DummyClassifierGFG}
+
+Następnie przetestowano regresję logistyczną.
+Model oblicza dla każdej klasy wynik zależny od ważonej sumy cech, a następnie wybiera klasę o największym prawdopodobieństwie.
+Jest to model liniowy, co oznacza, że wpływ pojedynczej cechy jest opisany przez współczynnik.
+Ta właściwość ułatwia późniejszą interpretację SHAP.~\cite{LogisticRegression}
+
+Kolejnym modelem był liniowy SVM (Support Vector Machine).
+Model SVM poszukuje granic rozdzielających klasy w przestrzeni cech.~\cite{SVM}
+W projekcie porównano regresję logistyczną i liniowy SVM zarówno dla
+reprezentacji TF-IDF, jak i dla prostych zliczeń CountVectorizer.
+
+Ostatnią grupą modeli były klasyfikatory XGBoost (eXtreme Gradient Boosting). XGBoost jest
+metodą wzmacniania drzew decyzyjnych. Kolejne drzewa są budowane tak,
+aby poprawiać błędy poprzednich drzew.~\cite{XGBoost} W projekcie
+zastosowano 250 drzew o maksymalnej głębokości 4, szybkość uczenia
+równą 0,05 oraz algorytm \texttt{hist}. XGBoost jest modelem nieliniowym,
+dlatego stanowi porównanie dla modeli liniowych.
+
+\section{Metryki jakości}
+
+Jakość klasyfikatorów porównano za pomocą kilku metryk.
+Accuracy, czyli dokładność, jest odsetkiem poprawnie sklasyfikowanych tweetów.
+Balanced accuracy, czyli zrównoważona dokładność, jest średnią czułości obliczoną
+osobno dla każdej klasy. Metryka ta jest szczególnie przydatna, gdy klasy mają
+różną liczność.~\cite{BalancedAccuracy}
+
+Dodatkowo wykorzystano macro F1 i weighted F1. Miara F1 łączy precyzję i czułość.
+Precyzja odpowiada na pytanie, jaka część tweetów przypisanych przez model do danej
+klasy rzeczywiście do niej należy. Czułość odpowiada na pytanie, jaką część
+prawdziwych przykładów tej klasy model odnalazł. Macro F1 oblicza wynik F1
+dla każdej klasy oddzielnie, a następnie traktuje wszystkie klasy równorzędnie.
+Weighted F1 również liczy wynik dla każdej klasy, ale nadaje większą wagę
+klasom liczniejszym. W tym projekcie jako główną metrykę wyboru modelu
+przyjęto macro F1, ponieważ zależało nam na porównywalnej jakości
+dla klas \emph{High}, \emph{Low} i \emph{Medium}.
+
+\section{Wyniki benchmarku}
+
+Tabela \ref{tab:benchmark} przedstawia wyniki uzyskane na zbiorze testowym.
+Najlepszy wynik macro F1, równy 0,818, uzyskała regresja logistyczna
+wykorzystująca TF-IDF oraz cechy liczbowe. Ten sam model osiągnął accuracy
+równą 0,818 i balanced accuracy równą 0,818. Wyniki regresji logistycznej
+i liniowego SVM dla TF-IDF były bardzo zbliżone, ale regresja logistyczna
+była nieznacznie lepsza i została wybrana jako model końcowy.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Wyniki modeli na zbiorze testowym. Najwyższa wartość macro F1 została wyróżniona pogrubieniem.}
+\label{tab:benchmark}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}Xcccc}
+\toprule
+Model & Accuracy & Balanced accuracy & Macro F1 & Czas uczenia [s] \\
+\midrule
+DummyClassifier, najczęstsza klasa & 0,335 & 0,333 & 0,167 & 0,0 \\
+Regresja logistyczna, TF--IDF + cechy liczbowe & 0,818 & 0,818 & \textbf{0,818} & 45,2 \\
+Liniowy SVM, TF--IDF + cechy liczbowe & 0,814 & 0,814 & 0,813 & 57,4 \\
+Regresja logistyczna, Count + cechy liczbowe & 0,812 & 0,812 & 0,812 & 52,9 \\
+Liniowy SVM, Count + cechy liczbowe & 0,786 & 0,786 & 0,785 & 29,8 \\
+XGBoost, TF--IDF + cechy liczbowe & 0,794 & 0,794 & 0,793 & 79,4 \\
+XGBoost, Count + cechy liczbowe & 0,793 & 0,793 & 0,792 & 8,2 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Różnica między najlepszym modelem a DummyClassifier jest bardzo duża.
+Model bazowy uzyskał macro F1 równe 0,167, ponieważ praktycznie zawsze
+wskazywał tę samą klasę. Reprezentacja TF-IDF okazała się lepsza od
+prostych zliczeń słów zarówno dla regresji logistycznej, jak i dla liniowego SVM.
+Oznacza to, że ważenie rzadziej występujących, bardziej charakterystycznych
+terminów było tutaj użyteczne.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.62\textwidth}
+\centering
+\autoplot{models_benchmark_metrics.png}
+\caption{Porównanie metryk modeli.}
+\label{fig:model-benchmark}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.34\textwidth}
+\centering
+\autoplot{models_training_time.png}
+\caption{Czas uczenia modeli.}
+\label{fig:model-time}
+\end{subfigure}
+\caption{Porównanie jakości i kosztu obliczeniowego modeli.}
+\label{fig:model-benchmark-time}
+\end{figure}
+
+\section{Szczegółowa ocena modelu końcowego}
+
+Dla wybranego modelu obliczono raport klasyfikacji. Klasa \emph{High} została
+rozpoznana najlepiej, z wynikiem F1 równym 0,888. Klasa \emph{Low} uzyskała
+F1 równe 0,826. Najtrudniejsza była klasa \emph{Medium}, dla której
+F1 wyniosło 0,739. Jest to intuicyjne, ponieważ klasa środkowa leży
+między dwiema pozostałymi klasami i może zawierać wpisy podobne zarówno
+do tweetów o niskim, jak i wysokim zainteresowaniu.
+
+\begin{table}[H]
+\centering
+\caption{Raport klasyfikacji dla regresji logistycznej z reprezentacją TF--IDF i cechami liczbowymi.}
+\label{tab:classification-report}
+\begin{tabular}{lrrrr}
+\toprule
+Klasa & Precyzja & Czułość & F1 & Liczba tweetów \\
+\midrule
+High & 0,899 & 0,878 & 0,888 & \num{2890} \\
+Low & 0,815 & 0,838 & 0,826 & \num{2904} \\
+Medium & 0,740 & 0,737 & 0,739 & \num{2877} \\
+\midrule
+Średnia macro & 0,818 & 0,818 & 0,818 & \num{8671} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.28\textwidth}
+\centering
+\autoplot{models_best_confusion_matrix.png}
+\caption{Macierz pomyłek modelu końcowego.}
+\label{fig:best-confusion}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.68\textwidth}
+\centering
+\autoplot{models_top3_confusion_matrices.png}
+\caption{Macierze pomyłek trzech najlepszych modeli.}
+\label{fig:top3-confusions}
+\end{subfigure}
+\caption{Ocena błędów klasyfikacji.}
+\label{fig:confusions}
+\end{figure}
+
+\chapter{Analiza SHAP i dyskusja wyników}
+
+\section{Cel analizy SHAP}
+
+Wysoki wynik modelu nie odpowiada jeszcze na pytanie, dlaczego model podjął określoną decyzję.
+Analiza SHAP (SHapley Additive exPlanations) służy do przypisania wkładu poszczególnych cech do wyniku
+modelu \cite{SHAPGFG}.
+
+Dla pojedynczego tweeta wynik modelu dla wybranej klasy można przybliżyć równaniem~\cite{SHAP}:
+\[
+f(\mathbf{x}) \approx \phi_0 + \sum_{j=1}^{p}\phi_j,
+\]
+gdzie $f(\mathbf{x})$ jest wynikiem modelu dla tweetu $\mathbf{x}$, $\phi_0$ jest wynikiem bazowym,
+$p$ oznacza liczbę cech, a $\phi_j$ jest wkładem $j$-tej cechy.
+Dodatnia wartość SHAP dla klasy \emph{High} oznacza, że dana cecha przesuwa wynik modelu w kierunku
+tej klasy. Ujemna wartość oznacza, że przesuwa wynik w przeciwną stronę.~\cite{SHAP}
+
+Ponieważ modelem końcowym była regresja logistyczna, zastosowano\\
+\texttt{shap.LinearExplainer}.
+Ten explainer jest dostosowany do modeli liniowych. Analizie poddano losową próbę \num{350}
+tweetów ze zbioru testowego. Tło referencyjne zawierało \num{1000} przykładów treningowych,
+jednak mechanizm maskujący SHAP użył podpróby 100 przykładów jako kompromisu pomiędzy
+stabilnością wyniku a kosztem obliczeń. Dla każdej z \num{350} obserwacji obliczono
+wkład \num{10045} cech dla trzech klas, co dało tablicę o wymiarze $(350, 10045, 3)$.
+
+\section{Globalna ważność cech}
+
+Globalna ważność cechy została obliczona jako średnia wartość bezwzględna SHAP,
+uśredniona po analizowanych tweetach i klasach. Wysoka wartość oznacza,
+że cecha często i silnie zmienia decyzje modelu, niezależnie od kierunku
+tego wpływu. Dane zostały przedstawione w tabeli \ref{tab:shap-global} oraz wykresie \ref{fig:shap-global}.
+Najważniejszą cechą globalną była liczba słów \texttt{word\_count}.
+Następne pozycje zajęły liczba wzmianek \texttt{mention\_count},
+wskaźnik czytelności Flesch Reading Ease, średnia długość zdania,
+wynik Flesch-Kincaid Grade, liczba znaków, udział trzeciego tematu LDA,
+obecność odnośnika do medium oraz liczba wykrzykników.
+
+\begin{table}[H]
+\centering
+\caption{Najważniejsze cechy według średniej wartości bezwzględnej SHAP.}
+\label{tab:shap-global}
+\begin{tabular}{lr}
+\toprule
+Cecha & Średnia wartość $|\mathrm{SHAP}|$ \\
+\midrule
+\texttt{word\_count} & 0,531 \\
+\texttt{mention\_count} & 0,494 \\
+\texttt{flesch\_reading\_ease} & 0,457 \\
+\texttt{avg\_sentence\_length} & 0,320 \\
+\texttt{flesch\_kincaid\_grade} & 0,293 \\
+\texttt{char\_count} & 0,275 \\
+\texttt{topic\_lda\_3} & 0,261 \\
+\texttt{has\_media\_link} & 0,246 \\
+\texttt{exclamation\_count} & 0,235 \\
+\texttt{max\_exclamation\_run} & 0,205 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+W całej analizie cechy ręcznie skonstruowane, nazywane dalej cechami inżynierskimi,
+odpowiadały za około 65,6\% sumy globalnej ważności SHAP.
+Tekstowe jedno- i dwuwyrazowe n-gramy odpowiadały za około 34,4\%.
+\ref{fig:shap-feature-type} pokazuje ten udział.
+Nie oznacza to, że reprezentacja słów była niepotrzebna. Przeciwnie,
+porównanie modeli wykazało, że TF-IDF poprawia jakość klasyfikacji.
+Wynik SHAP pokazuje natomiast, że po połączeniu obu rodzajów danych
+model wykorzystywał także silne i łatwo mierzalne sygnały stylistyczne,
+takie jak długość wpisu, liczba wzmianek oraz obecność mediów.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{shap_global_importance.png}
+\caption{Globalna ważność cech SHAP.}
+\label{fig:shap-global}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+\centering
+\autoplot{share_of_global_shap_importance_by_feature_type.png}
+\caption{Udział cech tekstowych i inżynierskich w ważności SHAP.}
+\label{fig:shap-feature-type}
+\end{subfigure}
+\caption{Globalna interpretacja modelu końcowego.}
+\label{fig:shap-global-summary}
+\end{figure}
+
+
+\section{Ważność cech dla poszczególnych klas}
+
+Dla klasy \emph{High} największe średnie wartości bezwzględne SHAP miały: liczba wzmianek,
+czytelność Flesch Reading Ease, liczba słów, poziom Flesch-Kincaid Grade, liczba znaków,
+trzeci temat LDA, liczba wykrzykników, obecność medium i długość ciągu wykrzykników.
+\ref{fig:shap-high}
+
+Dla klasy \emph{Low} szczególnie ważne były liczba słów, liczba wzmianek, czytelność,
+długość zdania oraz obecność linku do medium.
+\ref{fig:shap-low}
+
+Dla klasy \emph{Medium} dominowały średnia długość zdania, obecność adresu internetowego,
+liczba wykrzykników w stosunku do długości tweetu oraz długość tekstu.
+\ref{fig:shap-medium}
+
+Należy tutaj rozróżnić dwie informacje. Średnia wartość bezwzględna SHAP mówi,
+że cecha jest ważna. Średnia wartość ze znakiem mówi, czy w analizowanej próbce
+cecha przeciętnie przesuwała wynik w stronę danej klasy, czy od niej oddalała.
+Jeżeli średnia wartość ze znakiem jest bliska zeru, nie oznacza to braku znaczenia.
+Może oznaczać, że dla części tweetów cecha zwiększa wynik klasy, a dla innych go zmniejsza.
+\ref{fig:shap-signed-by-class}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_class_high.png}
+\caption{Klasa High.}
+\label{fig:shap-high}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_class_low.png}
+\caption{Klasa Low.}
+\label{fig:shap-low}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_class_medium.png}
+\caption{Klasa Medium.}
+\label{fig:shap-medium}
+\end{subfigure}
+\caption{Najważniejsze cechy |SHAP| dla każdej klasy zainteresowania.}
+\label{fig:shap-by-class}
+\end{figure}
+
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_signed_class_high.png}
+\caption{Klasa High.}
+\label{fig:shap-signed-high}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_signed_class_low.png}
+\caption{Klasa Low.}
+\label{fig:shap-signed-low}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\textwidth}
+\centering
+\autoplot{shap_signed_class_medium.png}
+\caption{Klasa Medium.}
+\label{fig:shap-signed-medium}
+\end{subfigure}
+\caption{Najważniejsze cechy SHAP ze znakiem dla każdej klasy zainteresowania.}
+\label{fig:shap-signed-by-class}
+\end{figure}
+
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_bar_class_high.png}
+\caption{Klasa High.}
+\label{fig:shap-bar-high}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_beeswarm_class_high.png}
+\caption{Klasa High.}
+\label{fig:shap-beeswarm-high}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_bar_class_low.png}
+\caption{Klasa Low.}
+\label{fig:shap-bar-low}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_beeswarm_class_low.png}
+\caption{Klasa Low.}
+\label{fig:shap-beeswarm-low}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_bar_class_medium.png}
+\caption{Klasa Medium.}
+\label{fig:shap-bar-medium}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.35\textwidth}
+\centering
+\autoplot{shap_beeswarm_class_medium.png}
+\caption{Klasa Medium.}
+\label{fig:shap-beeswarm-medium}
+\end{subfigure}
+\caption{Najważniejsze cechy |SHAP| dla każdej klasy zainteresowania z wykresami Beeswarm.}
+\label{fig:shap-beeswarm-by-class}
+\end{figure}
+
+\section{Interpretacja cech tekstowych}
+
+Wśród tekstowych n-gramów zauważalną ważność miały między \\
+innymi \texttt{mentions\_realdonaldtrump}, \texttt{mentions\_foxnews} \\
+oraz słowo \texttt{thanks}.
+
+Szczególnie istotne jest zachowanie wzmianki w postaci \texttt{mentions\_nazwa}.
+Gdyby usunąć wyłącznie znak \texttt{@}, model widziałby na przykład zwykły
+token \texttt{cnn}. Dzięki prefiksowi \texttt{mentions\_} można odróżnić nazwę
+używaną jako wzmianka od potencjalnego zwykłego słowa oraz łatwiej analizować
+decyzje SHAP. Wynik ten wspiera decyzję o zachowaniu pełnych wzmianek
+w tekście poddawanym wektoryzacji.
+
+\section{Wyjaśnienia lokalne}
+
+Poza analizą globalną przygotowano wyjaśnienia lokalne, czyli wyjaśnienia pojedynczych
+tweetów. Dla każdego przykładu wykres \ref{fig:shap-local} pokazuje cechy najsilniej
+przesuwające wynik modelu
+w kierunku przewidzianej klasy oraz cechy działające w przeciwnym kierunku.
+
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.30\textwidth}
+\centering
+\autoplot{shap_local_high_example.png}
+\caption{Lokalne wyjaśnienie przykładu przewidzianego jako High.}
+\label{fig:local-high}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.30\textwidth}
+\centering
+\autoplot{shap_local_low_example.png}
+\caption{Lokalne wyjaśnienie przykładu przewidzianego jako Low.}
+\label{fig:local-low}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.30\textwidth}
+\centering
+\autoplot{shap_local_medium_example.png}
+\caption{Lokalne wyjaśnienie przykładu przewidzianego jako Medium.}
+\label{fig:local-medium}
+\end{subfigure}
+\caption{Przykładowe lokalne wyjaśnienia SHAP.}
+\label{fig:shap-local}
+\end{figure}
+
+\chapter{Ograniczenia i odtwarzalność}
+
+Najważniejszym ograniczeniem obecnej implementacji jest moment przygotowania cech.
+CountVectorizer, TF-IDF, StandardScaler oraz model LDA zostały dopasowane do pełnego
+zbioru danych przed wykonaniem podziału na zbiór treningowy i testowy.
+Oznacza to, że słownik słów, wagi TF-IDF, parametry skalowania i tematy LDA
+zostały obliczone z wykorzystaniem również tweetów, które później znalazły się w zbiorze testowym.
+Czyli mamy przeciekiem danych, ponieważ część informacji o rozkładzie testowym trafia do etapu przygotowania danych.
+
+Przeciek nie przekazuje modelowi bezpośrednio poprawnych etykiet klas, ale może nieznacznie
+zawyżać raportowane wyniki. W projekcie przyjęto to uproszczenie ze względu na
+przejrzystą organizację notebooków i zapis pełnych macierzy cech do plików.
+W wersji stricte produkcyjnej należałoby najpierw podzielić surowe dane na zbiór
+treningowy i testowy, następnie dopasować wszystkie przekształcenia wyłącznie
+na danych treningowych, a później zastosować je do danych testowych.
+
+Drugim ograniczeniem jest to, że liczba retweetów zależy od wielu czynników nieobecnych w
+macierzy cech. Należą do nich czas publikacji, liczba obserwujących konto w danym okresie,
+bieżące wydarzenia polityczne, ekspozycja medialna i działanie mechanizmów platformy.
+
+Aby odtworzyć wyniki, należy pobrać dane ze strony Kaggle, umieścić pliki w katalogu
+\texttt{data/raw}, utworzyć środowisko wirtualne i zainstalować wymagane biblioteki.
+Następnie notebooki należy uruchomić w kolejności: \texttt{01\_EDA.ipynb},
+\texttt{02\_preprocessing.ipynb}, \texttt{03\_features.ipynb}, \texttt{04\_models.ipynb}
+oraz \texttt{05\_shap.ipynb}. Notebooki zapisują przetworzone dane, macierze cech,
+model końcowy oraz wyniki analizy w odpowiednich katalogach projektu.
+
+Całość kodu wraz z dokumentacją przygotowaną w latex'u oraz wszystkimi grafikami
+jest dostępna na GitHubie pod adresem ~\cite{repository}.
+
+\chapter{Wnioski}
+
+W projekcie zbudowano system klasyfikujący tweety do trzech poziomów zainteresowania
+mierzonego liczbą retweetów. Podstawą systemu była reprezentacja tekstu za pomocą
+TF-IDF i CountVectorizer, rozszerzona o 45 cech opisujących formę i styl wypowiedzi.
+Najlepszy rezultat uzyskała regresja logistyczna pracująca na reprezentacji TF-IDF
+połączonej z cechami liczbowymi. Model osiągnął macro F1 równe 0,818 oraz accuracy
+równe 0,818 na wydzielonym zbiorze testowym. Wynik ten był wyraźnie lepszy
+od klasyfikatora bazowego, który zawsze wybierał najczęstszą klasę.
+
+Porównanie modeli wskazało, że dla dużej, rzadkiej macierzy słów dobrze sprawdzają
+się modele liniowe. TF-IDF okazał się lepszy niż proste zliczenia słów, co sugeruje,
+że ważenie terminów charakterystycznych dla mniejszej części tweetów jest w
+tym zadaniu przydatne. Analiza SHAP pokazała, że model korzysta nie tylko
+z pojedynczych słów i bigramów, ale również z długości wpisu, liczby wzmianek,
+cech czytelności, obecności linków do mediów, interpunkcji i tematów LDA.
+
+Analiza SHAP umożliwiła przedstawienie tych zależności w sposób zrozumiały
+i pozwoliła przejść od samego wyniku klasyfikacji do dyskusji o cechach,
+które model rzeczywiście wykorzystuje.
+
+\FloatBarrier
+\printbibliography[title={Bibliografia}]
+
+\end{document}
